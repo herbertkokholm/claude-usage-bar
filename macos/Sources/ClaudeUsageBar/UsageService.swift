@@ -25,6 +25,7 @@ class UsageService: ObservableObject {
     private let tokenEndpoint: URL
     private let credentialsStore: StoredCredentialsStore
     private let localProfileLoader: @MainActor () -> String?
+    private let urlOpener: @MainActor (URL) -> Bool
     private var currentInterval: TimeInterval
     private enum RefreshResult {
         case success
@@ -86,7 +87,8 @@ class UsageService: ObservableObject {
         tokenEndpoint: URL = UsageService.defaultTokenEndpoint,
         redirectUri: String = UsageService.defaultRedirectURI,
         credentialsStore: StoredCredentialsStore = StoredCredentialsStore(),
-        localProfileLoader: @MainActor @escaping () -> String? = UsageService.loadLocalProfile
+        localProfileLoader: @MainActor @escaping () -> String? = UsageService.loadLocalProfile,
+        urlOpener: @MainActor @escaping (URL) -> Bool = { NSWorkspace.shared.open($0) }
     ) {
         self.session = session
         self.usageEndpoint = usageEndpoint
@@ -95,6 +97,7 @@ class UsageService: ObservableObject {
         self.redirectUri = redirectUri
         self.credentialsStore = credentialsStore
         self.localProfileLoader = localProfileLoader
+        self.urlOpener = urlOpener
         let stored = UserDefaults.standard.integer(forKey: "pollingMinutes")
         let minutes = Self.pollingOptions.contains(stored) ? stored : Self.defaultPollingMinutes
         self.pollingMinutes = minutes
@@ -148,7 +151,13 @@ class UsageService: ObservableObject {
         ]
 
         if let url = components.url {
-            NSWorkspace.shared.open(url)
+            guard urlOpener(url) else {
+                codeVerifier = nil
+                oauthState = nil
+                isAwaitingCode = false
+                lastError = "Could not open Claude sign-in page"
+                return
+            }
             isAwaitingCode = true
         }
     }
@@ -163,7 +172,15 @@ class UsageService: ObservableObject {
             return
         }
 
-        if parts.count > 1 {
+        // State validation is mandatory when an OAuth flow is pending
+        if oauthState != nil {
+            guard parts.count > 1 else {
+                lastError = "Missing OAuth state — expected code#state format"
+                isAwaitingCode = false
+                codeVerifier = nil
+                oauthState = nil
+                return
+            }
             let returnedState = String(parts[1])
             guard returnedState == oauthState else {
                 lastError = "OAuth state mismatch — try again"
