@@ -13,8 +13,8 @@ enum ResetIndicatorState {
         guard colored else { return .secondary }
         return switch self {
         case .normal:       .secondary
-        case .warning:      .orange
-        case .critical:     .red
+        case .warning:      .yellow
+        case .critical:     .orange
         case .inUsageLimit: .green
         }
     }
@@ -48,9 +48,9 @@ extension ResetIndicatorState {
         guard colored else { return .secondaryLabelColor }
         return switch self {
         case .normal:       .secondaryLabelColor
-        case .warning:      .systemOrange
-        case .critical:     .systemRed
-        case .inUsageLimit: .green
+        case .warning:      .systemYellow
+        case .critical:     .systemOrange
+        case .inUsageLimit: .systemGreen
         }
     }
 }

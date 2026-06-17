@@ -9,6 +9,7 @@ struct PopoverView: View {
     @AppStorage("setupComplete") private var setupComplete = false
     @State private var refreshCoolingDown = false
     @AppStorage(AppearanceDefaultsKey.showServiceStatus) private var showServiceStatus = false
+    @AppStorage(AppearanceDefaultsKey.showForecast) private var showForecast = true
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -75,14 +76,14 @@ struct PopoverView: View {
         UsageBucketRow(
             label: "5-Hour Window",
             bucket: service.usage?.fiveHour,
-            forecastPct: service.forecast.map { $0.projected5h / 100.0 },
+            forecastPct: showForecast ? service.forecast.map { $0.projected5h / 100.0 } : nil,
             windowSeconds: 5 * 3600
         )
 
         UsageBucketRow(
             label: "7-Day Window",
             bucket: service.usage?.sevenDay,
-            forecastPct: service.forecast.map { $0.projected7d / 100.0 },
+            forecastPct: showForecast ? service.forecast.map { $0.projected7d / 100.0 } : nil,
             windowSeconds: 7 * 24 * 3600
         )
 
@@ -400,7 +401,7 @@ private struct UsageProgressBar: View {
                 if let f = forecast {
                     let fx = min(max(f, 0), 1)
                     RoundedRectangle(cornerRadius: 1)
-                        .fill(Color.primary.opacity(0.7))
+                        .fill(Color.purple)
                         .frame(width: 2, height: markerHeight)
                         .offset(x: geo.size.width * fx - 1)
                 }

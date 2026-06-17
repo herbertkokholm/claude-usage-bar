@@ -7,6 +7,7 @@ struct SettingsWindowContent: View {
 
     @AppStorage(AppearanceDefaultsKey.showResetDivider) private var showResetDivider = false
     @AppStorage(AppearanceDefaultsKey.coloredResetDivider) private var coloredResetDivider = true
+    @AppStorage(AppearanceDefaultsKey.showForecast) private var showForecast = true
     @AppStorage(AppearanceDefaultsKey.showServiceStatus) private var showServiceStatus = false
     @AppStorage(AppearanceDefaultsKey.showOverlayWhenOperational) private var showOverlayWhenOperational = false
     @AppStorage(AppearanceDefaultsKey.statusPollMinutes) private var statusPollMinutes = StatusPollOptions.default
@@ -45,17 +46,11 @@ struct SettingsWindowContent: View {
                 )
             }
 
-            // Appearance: control the reset-time divider visibility and coloring on the menubar icon.
-            // The divider shows when the usage bucket resets and changes color based on usage/time state.
             Section("Appearance") {
-                // Toggle divider visibility on the menubar icon.
+                Toggle("Show forecast marker", isOn: $showForecast)
                 Toggle("Show reset time divider", isOn: $showResetDivider)
                 VStack(alignment: .leading, spacing: 4) {
-                    // Toggle colored mode (semantic colors) vs. neutral mode (gray).
-                    // Only meaningful when divider is shown, so disabled when divider is off.
-                    // Colored: orange (warning), dark orange (critical), red (in usage limit).
-                    // Neutral: always gray (secondary label color).
-                    Toggle("Colored status", isOn: $coloredResetDivider)
+                    Toggle("Colored reset divider", isOn: $coloredResetDivider)
                         .disabled(!showResetDivider)
                     Text("Off uses a single neutral color.")
                         .font(.caption2)
