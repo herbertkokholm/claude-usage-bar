@@ -72,7 +72,19 @@ public actor StatusPageClient {
     public static func makeDecoder() -> JSONDecoder {
         let d = JSONDecoder()
         d.keyDecodingStrategy = .convertFromSnakeCase
-        d.dateDecodingStrategy = .iso8601
+        let withFractional = ISO8601DateFormatter()
+        withFractional.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        let withoutFractional = ISO8601DateFormatter()
+        withoutFractional.formatOptions = [.withInternetDateTime]
+        d.dateDecodingStrategy = .custom { decoder in
+            let str = try decoder.singleValueContainer().decode(String.self)
+            if let date = withFractional.date(from: str) { return date }
+            if let date = withoutFractional.date(from: str) { return date }
+            throw DecodingError.dataCorrupted(
+                DecodingError.Context(codingPath: decoder.codingPath,
+                                      debugDescription: "Expected ISO8601 date string, got: \(str)")
+            )
+        }
         return d
     }
 

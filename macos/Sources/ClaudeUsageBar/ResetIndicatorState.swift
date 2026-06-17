@@ -28,12 +28,12 @@ enum ResetIndicatorState {
 /// - `lateInWindow`  when `timeLeftFraction <= 0.33`
 func resetIndicatorState(usagePct: Double, timeLeftFraction: Double) -> ResetIndicatorState {
     let highUsage = usagePct >= 80.0
-    let lateInWindow = timeLeftFraction <= 0.60
+    let lateInWindow = timeLeftFraction <= 0.33
     return switch (highUsage, lateInWindow) {
-    case (true,  true):  .critical
-    case (true,  false):  .warning
-    case (false, true):  .normal
-    case (false, false): .inUsageLimit
+    case (false, false): .normal
+    case (false, true):  .warning
+    case (true,  false): .critical
+    case (true,  true):  .inUsageLimit
     }
 }
 
