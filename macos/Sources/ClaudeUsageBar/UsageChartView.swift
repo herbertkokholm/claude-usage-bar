@@ -42,7 +42,7 @@ struct UsageChartView: View {
                     y: .value("Usage", point.pct5h * 100)
                 )
                 .foregroundStyle(by: .value("Window", "5h"))
-                .interpolationMethod(.catmullRom)
+                .interpolationMethod(.monotone)
             }
 
             ForEach(points) { point in
@@ -51,7 +51,7 @@ struct UsageChartView: View {
                     y: .value("Usage", point.pct7d * 100)
                 )
                 .foregroundStyle(by: .value("Window", "7d"))
-                .interpolationMethod(.catmullRom)
+                .interpolationMethod(.monotone)
             }
 
             if let iv = interpolated {
