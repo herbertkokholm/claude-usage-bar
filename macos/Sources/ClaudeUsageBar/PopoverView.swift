@@ -6,6 +6,7 @@ struct PopoverView: View {
     @ObservedObject var notificationService: NotificationService
     @ObservedObject var appUpdater: AppUpdater
     @AppStorage("setupComplete") private var setupComplete = false
+    @State private var refreshCoolingDown = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -126,11 +127,20 @@ struct PopoverView: View {
             HStack(spacing: 10) {
                 settingsButton
                 Spacer()
-                Button("Refresh") {
-                    Task { await service.fetchUsage() }
+                Button {
+                    refresh()
+                } label: {
+                    ZStack {
+                        Label("Refresh", systemImage: "arrow.clockwise")
+                            .opacity(service.isFetching ? 0 : 1)
+                        ProgressView()
+                            .controlSize(.small)
+                            .opacity(service.isFetching ? 1 : 0)
+                    }
                 }
                 .buttonStyle(.borderless)
                 .font(.caption)
+                .disabled(service.isFetching || refreshCoolingDown)
                 if appUpdater.isConfigured {
                     Button("Check for Updates…") {
                         appUpdater.checkForUpdates()
@@ -149,6 +159,19 @@ struct PopoverView: View {
         .padding(.vertical, 8)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+    }
+
+    /// Manual refresh with a short cooldown so the button can't be hammered
+    /// into firing back-to-back requests and tripping rate limiting. The
+    /// in-flight request itself is also guarded inside `fetchUsage()`.
+    private func refresh() {
+        guard !service.isFetching && !refreshCoolingDown else { return }
+        refreshCoolingDown = true
+        Task { @MainActor in
+            await service.fetchUsage()
+            try? await Task.sleep(nanoseconds: 2_000_000_000)
+            refreshCoolingDown = false
+        }
     }
 
     private var settingsButton: some View {
