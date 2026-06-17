@@ -16,8 +16,13 @@ struct PopoverView: View {
                     onComplete: { setupComplete = true }
                 )
             } else {
-                Text("Claude Usage")
-                    .font(.headline)
+                HStack(spacing: 8) {
+                    Image(systemName: "chart.bar.fill")
+                        .foregroundStyle(.tint)
+                    Text("Claude Usage")
+                        .font(.title3)
+                        .fontWeight(.semibold)
+                }
                 if !service.isAuthenticated {
                     signInView
                 } else {
@@ -78,70 +83,72 @@ struct PopoverView: View {
 
         if let opus = service.usage?.sevenDayOpus,
            opus.utilization != nil {
-            Divider()
-            Text("Per-Model (7 day)")
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-            UsageBucketRow(label: "Opus", bucket: opus)
-            if let sonnet = service.usage?.sevenDaySonnet {
-                UsageBucketRow(label: "Sonnet", bucket: sonnet)
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Per-Model (7 day)")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .padding(.horizontal, 2)
+                UsageBucketRow(label: "Opus", bucket: opus)
+                if let sonnet = service.usage?.sevenDaySonnet {
+                    UsageBucketRow(label: "Sonnet", bucket: sonnet)
+                }
             }
         }
 
         if let extra = service.usage?.extraUsage, extra.isEnabled {
-            Divider()
             ExtraUsageRow(extra: extra)
         }
 
-        Divider()
         UsageChartView(historyService: historyService)
 
         if let error = service.lastError {
-            Divider()
             Label(error, systemImage: "exclamationmark.triangle")
                 .foregroundStyle(.red)
                 .font(.caption)
         }
 
         if let updaterError = appUpdater.lastError {
-            Divider()
             Label(updaterError, systemImage: "arrow.triangle.2.circlepath.circle")
                 .foregroundStyle(.red)
                 .font(.caption)
         }
 
-        Divider()
+        footerView
+    }
 
-        HStack(spacing: 12) {
+    private var footerView: some View {
+        VStack(alignment: .leading, spacing: 4) {
             if let updated = service.lastUpdated {
                 Text("Updated \(updated, style: .relative) ago")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
             }
-            Spacer()
-        }
-
-        HStack(spacing: 12) {
-            settingsButton
-            Spacer()
-            Button("Refresh") {
-                Task { await service.fetchUsage() }
-            }
-            .buttonStyle(.borderless)
-            .font(.caption)
-            if appUpdater.isConfigured {
-                Button("Check for Updates…") {
-                    appUpdater.checkForUpdates()
+            HStack(spacing: 10) {
+                settingsButton
+                Spacer()
+                Button("Refresh") {
+                    Task { await service.fetchUsage() }
                 }
                 .buttonStyle(.borderless)
                 .font(.caption)
-                .disabled(!appUpdater.canCheckForUpdates)
+                if appUpdater.isConfigured {
+                    Button("Check for Updates…") {
+                        appUpdater.checkForUpdates()
+                    }
+                    .buttonStyle(.borderless)
+                    .font(.caption)
+                    .disabled(!appUpdater.canCheckForUpdates)
+                }
+                Button("Quit") { NSApplication.shared.terminate(nil) }
+                    .buttonStyle(.borderless)
+                    .font(.caption)
+                    .foregroundStyle(.tertiary)
             }
-            Button("Quit") { NSApplication.shared.terminate(nil) }
-                .buttonStyle(.borderless)
-                .font(.caption)
-                .foregroundStyle(.secondary)
         }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 8)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
     }
 
     private var settingsButton: some View {
@@ -286,17 +293,19 @@ private struct CodeEntryView: View {
 private struct UsageBucketRow: View {
     let label: String
     let bucket: UsageBucket?
-    var forecastPct: Double? = nil  // projected utilization, 0…1
+    var forecastPct: Double? = nil
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
+        VStack(alignment: .leading, spacing: 6) {
             HStack {
                 Text(label)
                     .font(.subheadline)
+                    .fontWeight(.medium)
                 Spacer()
                 Text(percentageText)
                     .font(.subheadline)
                     .monospacedDigit()
+                    .fontWeight(.semibold)
             }
             UsageProgressBar(
                 value: (bucket?.utilization ?? 0) / 100.0,
@@ -305,9 +314,11 @@ private struct UsageBucketRow: View {
             if let resetDate = bucket?.resetsAtDate {
                 Text("Resets \(resetDate, style: .relative)")
                     .font(.caption2)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(.tertiary)
             }
         }
+        .padding(10)
+        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
     }
 
     private var percentageText: String {
@@ -317,31 +328,31 @@ private struct UsageBucketRow: View {
 }
 
 private struct UsageProgressBar: View {
-    let value: Double       // current utilization, 0…1
-    var forecast: Double? = nil  // projected utilization, 0…1; nil hides the marker
+    let value: Double
+    var forecast: Double? = nil
 
-    private let barHeight: CGFloat = 4
-    private let markerHeight: CGFloat = 8
+    private let barHeight: CGFloat = 6
+    private let markerHeight: CGFloat = 10
 
     var body: some View {
         GeometryReader { geo in
             let clamped = min(max(value, 0), 1)
+            let fillColor = colorForPct(clamped)
             ZStack(alignment: .leading) {
-                // Track
                 Capsule()
-                    .fill(Color.secondary.opacity(0.2))
+                    .fill(Color.primary.opacity(0.08))
                     .frame(width: geo.size.width, height: barHeight)
 
-                // Current-utilization fill
                 if clamped > 0 {
                     Capsule()
-                        .fill(colorForPct(clamped))
+                        .fill(LinearGradient(
+                            colors: [fillColor.opacity(0.75), fillColor],
+                            startPoint: .leading,
+                            endPoint: .trailing
+                        ))
                         .frame(width: geo.size.width * clamped, height: barHeight)
                 }
 
-                // Forecast marker — thin vertical line centered at the projected position.
-                // Uses primary label colour (black/white per appearance) so it contrasts
-                // with both the light gray track and the coloured fill in light and dark mode.
                 if let f = forecast {
                     let fx = min(max(f, 0), 1)
                     RoundedRectangle(cornerRadius: 1)
@@ -359,9 +370,10 @@ private struct ExtraUsageRow: View {
     let extra: ExtraUsage
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
+        VStack(alignment: .leading, spacing: 6) {
             Text("Extra Usage")
                 .font(.subheadline)
+                .fontWeight(.medium)
             if let used = extra.usedCreditsAmount, let limit = extra.monthlyLimitAmount {
                 HStack {
                     Text("\(ExtraUsage.formatUSD(used)) / \(ExtraUsage.formatUSD(limit))")
@@ -372,12 +384,14 @@ private struct ExtraUsageRow: View {
                         Text("\(Int(round(pct)))%")
                             .font(.caption)
                             .monospacedDigit()
+                            .fontWeight(.semibold)
                     }
                 }
-                ProgressView(value: (extra.utilization ?? 0) / 100.0, total: 1.0)
-                    .tint(.blue)
+                UsageProgressBar(value: (extra.utilization ?? 0) / 100.0)
             }
         }
+        .padding(10)
+        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
     }
 }
 
@@ -411,8 +425,9 @@ private struct SetupThresholdSlider: View {
 
 private func colorForPct(_ pct: Double) -> Color {
     switch pct {
-    case ..<0.60: return .green
+    case ..<0.60: return .mint
     case 0.60..<0.80: return .yellow
+    case 0.80..<0.90: return .orange
     default: return .red
     }
 }

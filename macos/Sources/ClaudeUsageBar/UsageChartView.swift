@@ -37,12 +37,39 @@ struct UsageChartView: View {
 
         Chart {
             ForEach(points) { point in
+                AreaMark(
+                    x: .value("Time", point.timestamp),
+                    y: .value("Usage", point.pct5h * 100)
+                )
+                .interpolationMethod(.monotone)
+                .foregroundStyle(LinearGradient(
+                    colors: [Color.blue.opacity(0.18), Color.blue.opacity(0)],
+                    startPoint: .top,
+                    endPoint: .bottom
+                ))
+            }
+
+            ForEach(points) { point in
+                AreaMark(
+                    x: .value("Time", point.timestamp),
+                    y: .value("Usage", point.pct7d * 100)
+                )
+                .interpolationMethod(.monotone)
+                .foregroundStyle(LinearGradient(
+                    colors: [Color.orange.opacity(0.18), Color.orange.opacity(0)],
+                    startPoint: .top,
+                    endPoint: .bottom
+                ))
+            }
+
+            ForEach(points) { point in
                 LineMark(
                     x: .value("Time", point.timestamp),
                     y: .value("Usage", point.pct5h * 100)
                 )
                 .foregroundStyle(by: .value("Window", "5h"))
                 .interpolationMethod(.monotone)
+                .lineStyle(StrokeStyle(lineWidth: 2))
             }
 
             ForEach(points) { point in
@@ -52,6 +79,7 @@ struct UsageChartView: View {
                 )
                 .foregroundStyle(by: .value("Window", "7d"))
                 .interpolationMethod(.monotone)
+                .lineStyle(StrokeStyle(lineWidth: 2))
             }
 
             if let iv = interpolated {
@@ -147,7 +175,7 @@ struct UsageChartView: View {
         }
         .padding(.horizontal, 6)
         .padding(.vertical, 3)
-        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 4))
+        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 8))
     }
 
     // MARK: - Formatting
