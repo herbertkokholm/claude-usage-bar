@@ -5,6 +5,7 @@ import AppKit
 @MainActor
 class UsageService: ObservableObject {
     @Published var usage: UsageResponse?
+    @Published var forecast: UsageForecast?
     @Published var lastError: String?
     @Published var lastUpdated: Date?
     @Published var isAuthenticated = false
@@ -13,6 +14,8 @@ class UsageService: ObservableObject {
 
     var historyService: UsageHistoryService?
     var notificationService: NotificationService?
+
+    private let forecastService = UsageForecastService()
 
     private var timer: Timer?
     private let session: URLSession
@@ -289,6 +292,9 @@ class UsageService: ObservableObject {
             lastError = nil
             lastUpdated = Date()
             historyService?.recordDataPoint(pct5h: pct5h, pct7d: pct7d)
+            if let history = historyService?.history {
+                forecast = forecastService.forecast(history: history, current: reconciled)
+            }
             notificationService?.checkAndNotify(pct5h: pct5h, pct7d: pct7d, pctExtra: pctExtra)
             if currentInterval != baseInterval {
                 currentInterval = baseInterval

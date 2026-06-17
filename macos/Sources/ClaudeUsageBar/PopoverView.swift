@@ -66,12 +66,14 @@ struct PopoverView: View {
     private var usageView: some View {
         UsageBucketRow(
             label: "5-Hour Window",
-            bucket: service.usage?.fiveHour
+            bucket: service.usage?.fiveHour,
+            forecastPct: service.forecast.map { $0.projected5h / 100.0 }
         )
 
         UsageBucketRow(
             label: "7-Day Window",
-            bucket: service.usage?.sevenDay
+            bucket: service.usage?.sevenDay,
+            forecastPct: service.forecast.map { $0.projected7d / 100.0 }
         )
 
         if let opus = service.usage?.sevenDayOpus,
@@ -284,6 +286,7 @@ private struct CodeEntryView: View {
 private struct UsageBucketRow: View {
     let label: String
     let bucket: UsageBucket?
+    var forecastPct: Double? = nil  // projected utilization, 0…1
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
@@ -295,8 +298,10 @@ private struct UsageBucketRow: View {
                     .font(.subheadline)
                     .monospacedDigit()
             }
-            ProgressView(value: (bucket?.utilization ?? 0) / 100.0, total: 1.0)
-                .tint(colorForPct((bucket?.utilization ?? 0) / 100.0))
+            UsageProgressBar(
+                value: (bucket?.utilization ?? 0) / 100.0,
+                forecast: forecastPct
+            )
             if let resetDate = bucket?.resetsAtDate {
                 Text("Resets \(resetDate, style: .relative)")
                     .font(.caption2)
@@ -308,6 +313,45 @@ private struct UsageBucketRow: View {
     private var percentageText: String {
         guard let pct = bucket?.utilization else { return "—" }
         return "\(Int(round(pct)))%"
+    }
+}
+
+private struct UsageProgressBar: View {
+    let value: Double       // current utilization, 0…1
+    var forecast: Double? = nil  // projected utilization, 0…1; nil hides the marker
+
+    private let barHeight: CGFloat = 4
+    private let markerHeight: CGFloat = 8
+
+    var body: some View {
+        GeometryReader { geo in
+            let clamped = min(max(value, 0), 1)
+            ZStack(alignment: .leading) {
+                // Track
+                Capsule()
+                    .fill(Color.secondary.opacity(0.2))
+                    .frame(width: geo.size.width, height: barHeight)
+
+                // Current-utilization fill
+                if clamped > 0 {
+                    Capsule()
+                        .fill(colorForPct(clamped))
+                        .frame(width: geo.size.width * clamped, height: barHeight)
+                }
+
+                // Forecast marker — thin vertical line centered at the projected position.
+                // White fill with a soft shadow keeps it legible over any fill colour.
+                if let f = forecast {
+                    let fx = min(max(f, 0), 1)
+                    RoundedRectangle(cornerRadius: 1)
+                        .fill(Color.white)
+                        .frame(width: 2, height: markerHeight)
+                        .shadow(color: .black.opacity(0.3), radius: 1, x: 0, y: 0)
+                        .offset(x: geo.size.width * fx - 1)
+                }
+            }
+        }
+        .frame(height: markerHeight)
     }
 }
 
