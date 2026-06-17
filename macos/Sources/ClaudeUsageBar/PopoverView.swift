@@ -340,13 +340,13 @@ private struct UsageProgressBar: View {
                 }
 
                 // Forecast marker — thin vertical line centered at the projected position.
-                // White fill with a soft shadow keeps it legible over any fill colour.
+                // Uses primary label colour (black/white per appearance) so it contrasts
+                // with both the light gray track and the coloured fill in light and dark mode.
                 if let f = forecast {
                     let fx = min(max(f, 0), 1)
                     RoundedRectangle(cornerRadius: 1)
-                        .fill(Color.white)
+                        .fill(Color.primary.opacity(0.7))
                         .frame(width: 2, height: markerHeight)
-                        .shadow(color: .black.opacity(0.3), radius: 1, x: 0, y: 0)
                         .offset(x: geo.size.width * fx - 1)
                 }
             }
