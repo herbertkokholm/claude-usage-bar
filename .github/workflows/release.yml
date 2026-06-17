@@ -21,6 +21,19 @@ jobs:
       - name: Configure GitHub Pages
         uses: actions/configure-pages@v5
 
+      - name: Cache SPM dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            macos/.build/checkouts
+            macos/.build/artifacts
+          key: spm-${{ runner.os }}-${{ hashFiles('macos/Package.resolved') }}
+          restore-keys: |
+            spm-${{ runner.os }}-
+
+      - name: Run tests
+        run: cd macos && swift test
+
       - name: Build release app bundle
         run: |
           version="${GITHUB_REF_NAME#v}"
