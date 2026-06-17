@@ -5,8 +5,10 @@ struct PopoverView: View {
     @ObservedObject var historyService: UsageHistoryService
     @ObservedObject var notificationService: NotificationService
     @ObservedObject var appUpdater: AppUpdater
+    var statusMonitor: StatusMonitor?
     @AppStorage("setupComplete") private var setupComplete = false
     @State private var refreshCoolingDown = false
+    @AppStorage(AppearanceDefaultsKey.showServiceStatus) private var showServiceStatus = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -73,13 +75,15 @@ struct PopoverView: View {
         UsageBucketRow(
             label: "5-Hour Window",
             bucket: service.usage?.fiveHour,
-            forecastPct: service.forecast.map { $0.projected5h / 100.0 }
+            forecastPct: service.forecast.map { $0.projected5h / 100.0 },
+            windowSeconds: 5 * 3600
         )
 
         UsageBucketRow(
             label: "7-Day Window",
             bucket: service.usage?.sevenDay,
-            forecastPct: service.forecast.map { $0.projected7d / 100.0 }
+            forecastPct: service.forecast.map { $0.projected7d / 100.0 },
+            windowSeconds: 7 * 24 * 3600
         )
 
         if let opus = service.usage?.sevenDayOpus,
@@ -89,9 +93,9 @@ struct PopoverView: View {
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
                     .padding(.horizontal, 2)
-                UsageBucketRow(label: "Opus", bucket: opus)
+                UsageBucketRow(label: "Opus", bucket: opus, windowSeconds: 7 * 24 * 3600)
                 if let sonnet = service.usage?.sevenDaySonnet {
-                    UsageBucketRow(label: "Sonnet", bucket: sonnet)
+                    UsageBucketRow(label: "Sonnet", bucket: sonnet, windowSeconds: 7 * 24 * 3600)
                 }
             }
         }
@@ -112,6 +116,10 @@ struct PopoverView: View {
             Label(updaterError, systemImage: "arrow.triangle.2.circlepath.circle")
                 .foregroundStyle(.red)
                 .font(.caption)
+        }
+
+        if showServiceStatus, let monitor = statusMonitor {
+            ServiceStatusSection(monitor: monitor)
         }
 
         footerView
@@ -161,14 +169,12 @@ struct PopoverView: View {
         .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
     }
 
-    /// Manual refresh with a short cooldown so the button can't be hammered
-    /// into firing back-to-back requests and tripping rate limiting. The
-    /// in-flight request itself is also guarded inside `fetchUsage()`.
     private func refresh() {
         guard !service.isFetching && !refreshCoolingDown else { return }
         refreshCoolingDown = true
         Task { @MainActor in
             await service.fetchUsage()
+            await statusMonitor?.refresh()
             try? await Task.sleep(nanoseconds: 2_000_000_000)
             refreshCoolingDown = false
         }
@@ -317,6 +323,10 @@ private struct UsageBucketRow: View {
     let label: String
     let bucket: UsageBucket?
     var forecastPct: Double? = nil
+    var windowSeconds: TimeInterval? = nil
+
+    @AppStorage(AppearanceDefaultsKey.showResetDivider) private var showResetDivider = false
+    @AppStorage(AppearanceDefaultsKey.coloredResetDivider) private var coloredResetDivider = true
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -332,7 +342,8 @@ private struct UsageBucketRow: View {
             }
             UsageProgressBar(
                 value: (bucket?.utilization ?? 0) / 100.0,
-                forecast: forecastPct
+                forecast: forecastPct,
+                resetDivider: resetDividerInfo
             )
             if let resetDate = bucket?.resetsAtDate {
                 Text("Resets \(resetDate, style: .relative)")
@@ -344,6 +355,15 @@ private struct UsageBucketRow: View {
         .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
     }
 
+    private var resetDividerInfo: (position: Double, state: ResetIndicatorState, colored: Bool)? {
+        guard showResetDivider,
+              let ws = windowSeconds,
+              let pos = bucket?.resetPosition(windowSeconds: ws, now: Date()),
+              let usagePct = bucket?.utilization else { return nil }
+        let state = resetIndicatorState(usagePct: usagePct, timeLeftFraction: 1.0 - pos)
+        return (position: pos, state: state, colored: coloredResetDivider)
+    }
+
     private var percentageText: String {
         guard let pct = bucket?.utilization else { return "—" }
         return "\(Int(round(pct)))%"
@@ -353,6 +373,7 @@ private struct UsageBucketRow: View {
 private struct UsageProgressBar: View {
     let value: Double
     var forecast: Double? = nil
+    var resetDivider: (position: Double, state: ResetIndicatorState, colored: Bool)? = nil
 
     private let barHeight: CGFloat = 6
     private let markerHeight: CGFloat = 10
@@ -382,6 +403,14 @@ private struct UsageProgressBar: View {
                         .fill(Color.primary.opacity(0.7))
                         .frame(width: 2, height: markerHeight)
                         .offset(x: geo.size.width * fx - 1)
+                }
+
+                if let r = resetDivider {
+                    Rectangle()
+                        .fill(r.state.color(colored: r.colored))
+                        .frame(width: 2, height: markerHeight)
+                        .offset(x: geo.size.width * r.position - 1)
+                        .accessibilityHidden(true)
                 }
             }
         }
@@ -452,5 +481,108 @@ private func colorForPct(_ pct: Double) -> Color {
     case 0.60..<0.80: return .yellow
     case 0.80..<0.90: return .orange
     default: return .red
+    }
+}
+
+// MARK: - Service Status section
+
+public enum ServiceStatusDisplayState: Equatable {
+    case loading
+    case unavailable
+    case ready(StatusSnapshot)
+
+    public static func make(snapshot: StatusSnapshot?, lastError: StatusError?) -> ServiceStatusDisplayState {
+        if let snapshot {
+            return .ready(snapshot)
+        }
+        if lastError != nil {
+            return .unavailable
+        }
+        return .loading
+    }
+}
+
+@MainActor
+struct ServiceStatusSection: View {
+    let monitor: StatusMonitor
+    private let statusPageURL = URL(string: "https://status.claude.com")!
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("Service Status")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+
+            switch ServiceStatusDisplayState.make(
+                snapshot: monitor.snapshot,
+                lastError: monitor.lastError
+            ) {
+            case .loading:
+                Text("Checking status…")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            case .unavailable:
+                HStack {
+                    Label("Status unavailable", systemImage: "wifi.slash")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                    Button("Retry") {
+                        Task { await monitor.refresh() }
+                    }
+                    .buttonStyle(.borderless)
+                    .font(.caption)
+                }
+            case .ready(let snap):
+                ForEach(snap.allMonitoredComponents) { component in
+                    HStack {
+                        Circle()
+                            .fill(componentColor(component.status))
+                            .frame(width: 6, height: 6)
+                        Text(component.name)
+                            .font(.caption)
+                        Spacer()
+                        Text(humanReadable(component.status))
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                ForEach(snap.activeIncidents) { incident in
+                    Label(incident.name, systemImage: "exclamationmark.triangle")
+                        .font(.caption2)
+                        .foregroundStyle(.orange)
+                        .lineLimit(2)
+                }
+            }
+
+            HStack {
+                Button("View status page") {
+                    NSWorkspace.shared.open(statusPageURL)
+                }
+                .buttonStyle(.borderless)
+                .font(.caption)
+                Spacer()
+            }
+        }
+        .padding(10)
+        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+    }
+
+    private func componentColor(_ status: ClaudeServiceStatus) -> Color {
+        switch status {
+        case .operational, .underMaintenance: return .green
+        case .degradedPerformance, .partialOutage: return .orange
+        case .majorOutage: return .red
+        }
+    }
+
+    private func humanReadable(_ status: ClaudeServiceStatus) -> String {
+        switch status {
+        case .operational: return "Operational"
+        case .underMaintenance: return "Under maintenance"
+        case .degradedPerformance: return "Degraded"
+        case .partialOutage: return "Partial outage"
+        case .majorOutage: return "Major outage"
+        }
     }
 }
