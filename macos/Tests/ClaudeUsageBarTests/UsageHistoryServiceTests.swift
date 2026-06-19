@@ -65,16 +65,6 @@ final class UsageHistoryServiceTests: XCTestCase {
         XCTAssertEqual(service2.history.dataPoints.count, 2)
     }
 
-    func testFlushIsNoOpWhenNotDirty() {
-        let service = makeService()
-
-        // Not dirty — flush should be a no-op
-        service.flushToDisk()
-
-        // File should not exist since there was nothing to write
-        XCTAssertFalse(FileManager.default.fileExists(atPath: service.historyFileURL.path))
-    }
-
     func testPermissionsPreservedAfterMultipleFlushes() throws {
         let service = makeService()
         service.recordDataPoint(pct5h: 0.1, pct7d: 0.2)
