@@ -35,6 +35,12 @@ class UsageService: ObservableObject {
 
     private var refreshTask: Task<RefreshResult, Never>?
 
+    // let properties are safe to read from nonisolated deinit (immutable, no data races).
+    private let notificationCenter: NotificationCenter
+    private let wakeNotification: Notification.Name
+    // nonisolated(unsafe): var mutated on MainActor; deinit reads without a hop.
+    nonisolated(unsafe) private var wakeObserver: (any NSObjectProtocol)?
+
     static let defaultPollingMinutes = 30
     static let pollingOptions = [5, 15, 30, 60]
     nonisolated static let maxBackoffInterval: TimeInterval = 60 * 60
@@ -88,7 +94,9 @@ class UsageService: ObservableObject {
         redirectUri: String = UsageService.defaultRedirectURI,
         credentialsStore: StoredCredentialsStore = StoredCredentialsStore(),
         localProfileLoader: @MainActor @escaping () -> String? = UsageService.loadLocalProfile,
-        urlOpener: @MainActor @escaping (URL) -> Bool = { NSWorkspace.shared.open($0) }
+        urlOpener: @MainActor @escaping (URL) -> Bool = { NSWorkspace.shared.open($0) },
+        notificationCenter: NotificationCenter? = nil,
+        wakeNotification: Notification.Name? = nil
     ) {
         self.session = session
         self.usageEndpoint = usageEndpoint
@@ -98,6 +106,8 @@ class UsageService: ObservableObject {
         self.credentialsStore = credentialsStore
         self.localProfileLoader = localProfileLoader
         self.urlOpener = urlOpener
+        self.notificationCenter = notificationCenter ?? NSWorkspace.shared.notificationCenter
+        self.wakeNotification = wakeNotification ?? NSWorkspace.didWakeNotification
         let stored = UserDefaults.standard.integer(forKey: "pollingMinutes")
         let minutes = Self.pollingOptions.contains(stored) ? stored : Self.defaultPollingMinutes
         self.pollingMinutes = minutes
@@ -105,15 +115,35 @@ class UsageService: ObservableObject {
         isAuthenticated = loadCredentials() != nil
     }
 
+    deinit {
+        if let wakeObserver { notificationCenter.removeObserver(wakeObserver) }
+    }
+
     // MARK: - Polling
 
     func startPolling() {
         guard isAuthenticated else { return }
+        installWakeObserver()
         Task {
             await fetchUsage()
             if accountEmail == nil { await fetchProfile() }
         }
         scheduleTimer()
+    }
+
+    private func installWakeObserver() {
+        if let wakeObserver { notificationCenter.removeObserver(wakeObserver) }
+        wakeObserver = notificationCenter.addObserver(
+            forName: wakeNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                guard let self, self.isAuthenticated else { return }
+                self.scheduleTimer()
+                Task { await self.fetchUsage() }
+            }
+        }
     }
 
     private func scheduleTimer() {
@@ -260,6 +290,10 @@ class UsageService: ObservableObject {
         refreshTask?.cancel()
         refreshTask = nil
         lastError = nil
+        if let wakeObserver {
+            notificationCenter.removeObserver(wakeObserver)
+            self.wakeObserver = nil
+        }
     }
 
     // MARK: - PKCE Helpers

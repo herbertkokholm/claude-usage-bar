@@ -646,6 +646,77 @@ final class UsageServiceTests: XCTestCase {
         XCTAssertEqual(saved.refreshToken, "refresh-2")
     }
 
+    // MARK: - Sleep / Wake
+
+    func testWakeNotificationTriggersFetch() async throws {
+        let store = try makeStore()
+        try store.save(StoredCredentials(
+            accessToken: "access-1",
+            refreshToken: "refresh-1",
+            expiresAt: Date().addingTimeInterval(3600),
+            scopes: UsageService.defaultOAuthScopes
+        ))
+
+        let usageURL = URL(string: "https://example.com/api/oauth/usage")!
+        let tokenURL = URL(string: "https://example.com/v1/oauth/token")!
+        var fetchCount = 0
+
+        MockURLProtocol.handler = { request in
+            guard request.url?.path == "/api/oauth/usage" else {
+                return try Self.httpResponse(url: request.url!, statusCode: 404)
+            }
+            fetchCount += 1
+            return try Self.httpResponse(
+                url: usageURL,
+                statusCode: 200,
+                body: """
+                {
+                  "five_hour": { "utilization": 50, "resets_at": "2026-03-08T18:00:00Z" },
+                  "seven_day": { "utilization": 20, "resets_at": "2026-03-15T18:00:00Z" }
+                }
+                """
+            )
+        }
+
+        let wakeName = Notification.Name("UsageService.testWake")
+        let center = NotificationCenter()
+
+        let service = UsageService(
+            session: makeSession(),
+            usageEndpoint: usageURL,
+            userinfoEndpoint: URL(string: "https://example.com/api/oauth/userinfo")!,
+            tokenEndpoint: tokenURL,
+            credentialsStore: store,
+            localProfileLoader: { "test@example.com" },
+            notificationCenter: center,
+            wakeNotification: wakeName
+        )
+
+        // startPolling() installs the wake observer and kicks off an initial fetch.
+        service.startPolling()
+
+        // Wait for the initial fetch.
+        let deadline1 = Date().addingTimeInterval(2)
+        while service.lastUpdated == nil, Date() < deadline1 { await Task.yield() }
+        XCTAssertEqual(fetchCount, 1, "startPolling() should trigger one initial fetch")
+
+        let priorUpdated = service.lastUpdated
+
+        // Simulate Mac waking from sleep.
+        center.post(name: wakeName, object: nil)
+
+        // Two yields let the Task { @MainActor } inside the observer closure run and
+        // enqueue the inner fetch Task; then we poll until lastUpdated advances.
+        await Task.yield()
+        await Task.yield()
+
+        let deadline2 = Date().addingTimeInterval(2)
+        while service.lastUpdated == priorUpdated, Date() < deadline2 { await Task.yield() }
+
+        XCTAssertNotEqual(service.lastUpdated, priorUpdated, "Wake notification should trigger a new fetch")
+        XCTAssertEqual(fetchCount, 2, "Wake notification should trigger a second fetch")
+    }
+
     // MARK: - OAuth code submission
 
     /// A whitespace-only paste passes the `code.isEmpty` button guard (which checks
