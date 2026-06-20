@@ -1,5 +1,6 @@
 import SwiftUI
 import AppKit
+import ServiceManagement
 
 @main
 struct ClaudeUsageBarApp: App {
@@ -32,6 +33,22 @@ struct ClaudeUsageBarApp: App {
                     // Auto-mark existing users as setup-complete
                     if service.isAuthenticated && !UserDefaults.standard.bool(forKey: "setupComplete") {
                         UserDefaults.standard.set(true, forKey: "setupComplete")
+                    }
+                    // Re-register launch-at-login on every startup so macOS system events
+                    // or app updates that silently clear the SMAppService registration are
+                    // repaired automatically without the user having to re-toggle the setting.
+                    // For users who enabled the feature before intent was persisted to
+                    // UserDefaults, fall back to the live system status and save it.
+                    let launchAtLoginIntentKey = "launchAtLoginIntent"
+                    let launchAtLoginIntent: Bool
+                    if UserDefaults.standard.object(forKey: launchAtLoginIntentKey) != nil {
+                        launchAtLoginIntent = UserDefaults.standard.bool(forKey: launchAtLoginIntentKey)
+                    } else {
+                        launchAtLoginIntent = SMAppService.mainApp.status == .enabled
+                        UserDefaults.standard.set(launchAtLoginIntent, forKey: launchAtLoginIntentKey)
+                    }
+                    if launchAtLoginIntent {
+                        try? SMAppService.mainApp.register()
                     }
                     historyService.loadHistory()
                     service.historyService = historyService

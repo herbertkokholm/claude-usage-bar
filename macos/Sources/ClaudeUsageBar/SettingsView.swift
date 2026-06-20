@@ -158,6 +158,8 @@ final class LaunchAtLoginModel: ObservableObject {
     @Published private(set) var isSupported: Bool
     @Published private(set) var message: String?
 
+    private static let intentKey = "launchAtLoginIntent"
+
     init(bundleURL: URL = Bundle.main.bundleURL) {
         isSupported = supportsLaunchAtLoginManagement(appURL: bundleURL)
 
@@ -178,7 +180,8 @@ final class LaunchAtLoginModel: ObservableObject {
             } else {
                 try SMAppService.mainApp.unregister()
             }
-            isEnabled = enabled
+            UserDefaults.standard.set(enabled, forKey: Self.intentKey)
+            isEnabled = SMAppService.mainApp.status == .enabled
             message = nil
         } catch {
             isEnabled = SMAppService.mainApp.status == .enabled
