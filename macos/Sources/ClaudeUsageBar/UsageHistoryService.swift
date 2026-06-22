@@ -1,26 +1,24 @@
 import Foundation
-import Combine
 import AppKit
 
 @MainActor
 class UsageHistoryService: ObservableObject {
     @Published var history = UsageHistory()
 
-    private var flushTimer: AnyCancellable?
-    private var isDirty = false
     private var terminationObserver: Any?
+    let historyFileURL: URL
 
     private static let retentionInterval: TimeInterval = 30 * 86400 // 30 days
-    private static let flushInterval: TimeInterval = 300 // 5 minutes
 
-    private static var historyFileURL: URL {
+    private static var defaultHistoryFileURL: URL {
         let dir = FileManager.default.homeDirectoryForCurrentUser
             .appendingPathComponent(".config/claude-usage-bar", isDirectory: true)
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         return dir.appendingPathComponent("history.json")
     }
 
-    init() {
+    init(historyFileURL: URL? = nil) {
+        self.historyFileURL = historyFileURL ?? Self.defaultHistoryFileURL
         terminationObserver = NotificationCenter.default.addObserver(
             forName: NSApplication.willTerminateNotification,
             object: nil, queue: .main
@@ -41,7 +39,7 @@ class UsageHistoryService: ObservableObject {
     // MARK: - Load
 
     func loadHistory() {
-        let url = Self.historyFileURL
+        let url = historyFileURL
         guard FileManager.default.fileExists(atPath: url.path) else { return }
 
         do {
@@ -63,31 +61,28 @@ class UsageHistoryService: ObservableObject {
     func recordDataPoint(pct5h: Double, pct7d: Double) {
         let point = UsageDataPoint(pct5h: pct5h, pct7d: pct7d)
         history.dataPoints.append(point)
-        isDirty = true
-        startFlushTimerIfNeeded()
+        flushToDisk()
     }
 
     // MARK: - Flush
 
     func flushToDisk() {
-        guard isDirty else { return }
         history.dataPoints = pruned(history.dataPoints)
 
         guard let data = try? JSONEncoder.historyEncoder.encode(history) else { return }
-        try? data.write(to: Self.historyFileURL, options: .atomic)
-
-        isDirty = false
-        flushTimer?.cancel()
-        flushTimer = nil
-    }
-
-    private func startFlushTimerIfNeeded() {
-        guard flushTimer == nil else { return }
-        flushTimer = Timer.publish(every: Self.flushInterval, on: .main, in: .common)
-            .autoconnect()
-            .sink { [weak self] _ in
-                self?.flushToDisk()
-            }
+        let url = historyFileURL
+        let tempURL = url.appendingPathExtension("tmp")
+        try? FileManager.default.removeItem(at: tempURL)
+        guard FileManager.default.createFile(
+            atPath: tempURL.path,
+            contents: data,
+            attributes: [.posixPermissions: 0o600]
+        ) else { return }
+        do {
+            _ = try FileManager.default.replaceItemAt(url, withItemAt: tempURL)
+        } catch {
+            try? FileManager.default.removeItem(at: tempURL)
+        }
     }
 
     // MARK: - Downsampling

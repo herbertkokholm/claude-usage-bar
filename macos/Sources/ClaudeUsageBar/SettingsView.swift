@@ -5,6 +5,13 @@ struct SettingsWindowContent: View {
     @ObservedObject var service: UsageService
     @ObservedObject var notificationService: NotificationService
 
+    @AppStorage(AppearanceDefaultsKey.showResetDivider) private var showResetDivider = false
+    @AppStorage(AppearanceDefaultsKey.coloredResetDivider) private var coloredResetDivider = true
+    @AppStorage(AppearanceDefaultsKey.showForecast) private var showForecast = true
+    @AppStorage(AppearanceDefaultsKey.showServiceStatus) private var showServiceStatus = false
+    @AppStorage(AppearanceDefaultsKey.showOverlayWhenOperational) private var showOverlayWhenOperational = false
+    @AppStorage(AppearanceDefaultsKey.statusPollMinutes) private var statusPollMinutes = StatusPollOptions.default
+
     var body: some View {
         Form {
             Section("General") {
@@ -39,6 +46,35 @@ struct SettingsWindowContent: View {
                 )
             }
 
+            Section("Appearance") {
+                Toggle("Show forecast marker", isOn: $showForecast)
+                Toggle("Show reset time divider", isOn: $showResetDivider)
+                VStack(alignment: .leading, spacing: 4) {
+                    Toggle("Colored reset divider", isOn: $coloredResetDivider)
+                        .disabled(!showResetDivider)
+                    Text("Off uses a single neutral color.")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+            }
+
+            // Service Status: optional indicator that polls https://status.claude.com and tints
+            // the menubar Claude logo when Claude services are degraded. Default OFF.
+            Section("Service Status") {
+                Toggle("Show Claude service status", isOn: $showServiceStatus)
+                Toggle("Show non-operational statuses on menubar", isOn: $showOverlayWhenOperational)
+                    .disabled(!showServiceStatus)
+                Picker("Poll interval", selection: $statusPollMinutes) {
+                    ForEach(StatusPollOptions.minutes, id: \.self) { mins in
+                        Text("\(mins) min").tag(mins)
+                    }
+                }
+                .disabled(!showServiceStatus)
+                Text("Polls https://status.claude.com (no auth, public endpoint).")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
+
             if service.isAuthenticated {
                 Section("Account") {
                     if let email = service.accountEmail {
@@ -51,7 +87,7 @@ struct SettingsWindowContent: View {
             }
         }
         .formStyle(.grouped)
-        .frame(width: 400)
+        .frame(minWidth: 400, maxWidth: 400, maxHeight: 600)
         .fixedSize(horizontal: false, vertical: true)
         .onAppear {
             focusSettingsWindow()
@@ -122,6 +158,8 @@ final class LaunchAtLoginModel: ObservableObject {
     @Published private(set) var isSupported: Bool
     @Published private(set) var message: String?
 
+    private static let intentKey = "launchAtLoginIntent"
+
     init(bundleURL: URL = Bundle.main.bundleURL) {
         isSupported = supportsLaunchAtLoginManagement(appURL: bundleURL)
 
@@ -142,7 +180,8 @@ final class LaunchAtLoginModel: ObservableObject {
             } else {
                 try SMAppService.mainApp.unregister()
             }
-            isEnabled = enabled
+            UserDefaults.standard.set(enabled, forKey: Self.intentKey)
+            isEnabled = SMAppService.mainApp.status == .enabled
             message = nil
         } catch {
             isEnabled = SMAppService.mainApp.status == .enabled

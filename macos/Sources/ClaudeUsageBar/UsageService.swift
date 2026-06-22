@@ -10,6 +10,7 @@ class UsageService: ObservableObject {
     @Published var lastUpdated: Date?
     @Published var isAuthenticated = false
     @Published var isAwaitingCode = false
+    @Published private(set) var isFetching = false
     @Published private(set) var accountEmail: String?
 
     var historyService: UsageHistoryService?
@@ -24,6 +25,7 @@ class UsageService: ObservableObject {
     private let tokenEndpoint: URL
     private let credentialsStore: StoredCredentialsStore
     private let localProfileLoader: @MainActor () -> String?
+    private let urlOpener: @MainActor (URL) -> Bool
     private var currentInterval: TimeInterval
     private enum RefreshResult {
         case success
@@ -32,6 +34,12 @@ class UsageService: ObservableObject {
     }
 
     private var refreshTask: Task<RefreshResult, Never>?
+
+    // let properties are safe to read from nonisolated deinit (immutable, no data races).
+    private let notificationCenter: NotificationCenter
+    private let wakeNotification: Notification.Name
+    // nonisolated(unsafe): var mutated on MainActor; deinit reads without a hop.
+    nonisolated(unsafe) private var wakeObserver: (any NSObjectProtocol)?
 
     static let defaultPollingMinutes = 30
     static let pollingOptions = [5, 15, 30, 60]
@@ -85,7 +93,10 @@ class UsageService: ObservableObject {
         tokenEndpoint: URL = UsageService.defaultTokenEndpoint,
         redirectUri: String = UsageService.defaultRedirectURI,
         credentialsStore: StoredCredentialsStore = StoredCredentialsStore(),
-        localProfileLoader: @MainActor @escaping () -> String? = UsageService.loadLocalProfile
+        localProfileLoader: @MainActor @escaping () -> String? = UsageService.loadLocalProfile,
+        urlOpener: @MainActor @escaping (URL) -> Bool = { NSWorkspace.shared.open($0) },
+        notificationCenter: NotificationCenter? = nil,
+        wakeNotification: Notification.Name? = nil
     ) {
         self.session = session
         self.usageEndpoint = usageEndpoint
@@ -94,6 +105,9 @@ class UsageService: ObservableObject {
         self.redirectUri = redirectUri
         self.credentialsStore = credentialsStore
         self.localProfileLoader = localProfileLoader
+        self.urlOpener = urlOpener
+        self.notificationCenter = notificationCenter ?? NSWorkspace.shared.notificationCenter
+        self.wakeNotification = wakeNotification ?? NSWorkspace.didWakeNotification
         let stored = UserDefaults.standard.integer(forKey: "pollingMinutes")
         let minutes = Self.pollingOptions.contains(stored) ? stored : Self.defaultPollingMinutes
         self.pollingMinutes = minutes
@@ -101,15 +115,35 @@ class UsageService: ObservableObject {
         isAuthenticated = loadCredentials() != nil
     }
 
+    deinit {
+        if let wakeObserver { notificationCenter.removeObserver(wakeObserver) }
+    }
+
     // MARK: - Polling
 
     func startPolling() {
         guard isAuthenticated else { return }
+        installWakeObserver()
         Task {
             await fetchUsage()
             if accountEmail == nil { await fetchProfile() }
         }
         scheduleTimer()
+    }
+
+    private func installWakeObserver() {
+        if let wakeObserver { notificationCenter.removeObserver(wakeObserver) }
+        wakeObserver = notificationCenter.addObserver(
+            forName: wakeNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                guard let self, self.isAuthenticated else { return }
+                self.scheduleTimer()
+                Task { await self.fetchUsage() }
+            }
+        }
     }
 
     private func scheduleTimer() {
@@ -147,7 +181,13 @@ class UsageService: ObservableObject {
         ]
 
         if let url = components.url {
-            NSWorkspace.shared.open(url)
+            guard urlOpener(url) else {
+                codeVerifier = nil
+                oauthState = nil
+                isAwaitingCode = false
+                lastError = "Could not open Claude sign-in page"
+                return
+            }
             isAwaitingCode = true
         }
     }
@@ -162,7 +202,15 @@ class UsageService: ObservableObject {
             return
         }
 
-        if parts.count > 1 {
+        // State validation is mandatory when an OAuth flow is pending
+        if oauthState != nil {
+            guard parts.count > 1 else {
+                lastError = "Missing OAuth state — expected code#state format"
+                isAwaitingCode = false
+                codeVerifier = nil
+                oauthState = nil
+                return
+            }
             let returnedState = String(parts[1])
             guard returnedState == oauthState else {
                 lastError = "OAuth state mismatch — try again"
@@ -242,6 +290,10 @@ class UsageService: ObservableObject {
         refreshTask?.cancel()
         refreshTask = nil
         lastError = nil
+        if let wakeObserver {
+            notificationCenter.removeObserver(wakeObserver)
+            self.wakeObserver = nil
+        }
     }
 
     // MARK: - PKCE Helpers
@@ -265,6 +317,12 @@ class UsageService: ObservableObject {
             isAuthenticated = false
             return
         }
+
+        // Re-entrancy guard: ignore overlapping fetches so rapid manual
+        // refreshes can't fire concurrent requests and trip rate limiting.
+        guard !isFetching else { return }
+        isFetching = true
+        defer { isFetching = false }
 
         do {
             guard let result = try await sendAuthorizedRequest(to: usageEndpoint) else {
