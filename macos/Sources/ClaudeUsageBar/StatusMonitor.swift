@@ -194,9 +194,8 @@ public final class StatusMonitor {
         sleepObserver = notificationCenter.addObserver(
             forName: sleepNotification,
             object: nil,
-            queue: .main
+            queue: nil
         ) { [weak self] _ in
-            // The closure runs on .main; hop to the actor to mutate state safely.
             Task { @MainActor [weak self] in
                 self?.isPaused = true
             }
@@ -204,7 +203,7 @@ public final class StatusMonitor {
         wakeObserver = notificationCenter.addObserver(
             forName: wakeNotification,
             object: nil,
-            queue: .main
+            queue: nil
         ) { [weak self] _ in
             Task { @MainActor [weak self] in
                 self?.isPaused = false
