@@ -10,12 +10,30 @@ class UsageHistoryService: ObservableObject {
 
     private static let retentionInterval: TimeInterval = 30 * 86400 // 30 days
 
+    // The canonical location is Application Support, which is accessible inside the
+    // app sandbox and follows macOS data-storage conventions. The legacy location
+    // (~/.config/claude-usage-bar/) is migrated on first use.
     private static var defaultHistoryFileURL: URL {
-        let dir = FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent(".config/claude-usage-bar", isDirectory: true)
+        guard let appSupport = FileManager.default
+            .urls(for: .applicationSupportDirectory, in: .userDomainMask).first else {
+            // Fallback should never be reached on a standard macOS install.
+            return FileManager.default.homeDirectoryForCurrentUser
+                .appendingPathComponent(".config/claude-usage-bar/history.json")
+        }
+        let dir = appSupport.appendingPathComponent("claude-usage-bar", isDirectory: true)
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         try? FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: dir.path)
-        return dir.appendingPathComponent("history.json")
+        let destination = dir.appendingPathComponent("history.json")
+        migrateLegacyHistoryFile(to: destination)
+        return destination
+    }
+
+    private static func migrateLegacyHistoryFile(to destination: URL) {
+        guard !FileManager.default.fileExists(atPath: destination.path) else { return }
+        let legacy = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent(".config/claude-usage-bar/history.json")
+        guard FileManager.default.fileExists(atPath: legacy.path) else { return }
+        try? FileManager.default.moveItem(at: legacy, to: destination)
     }
 
     init(historyFileURL: URL? = nil) {

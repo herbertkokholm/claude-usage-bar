@@ -17,6 +17,7 @@ DMG_BACKGROUND_SOURCE="$DMG_RESOURCES_DIR/background.png"
 APP_ICON_SOURCE="$PROJECT_DIR/Resources/AppIcon.icns"
 PLIST_BUDDY="/usr/libexec/PlistBuddy"
 PLUTIL="/usr/bin/plutil"
+ENTITLEMENTS_FILE="$PROJECT_DIR/Resources/ClaudeUsageBar.entitlements"
 CREATE_ZIP=0
 CREATE_DMG=0
 SKIP_BUILD=0
@@ -126,7 +127,11 @@ build_app_bundle() {
             \( -name '*.app' -o -name '*.xpc' \) -type d | sort)
         codesign --force --sign - "$APP_BUNDLE/Contents/Frameworks/Sparkle.framework"
     fi
-    codesign --force --sign - "$APP_BUNDLE"
+    if [[ -f "$ENTITLEMENTS_FILE" ]]; then
+        codesign --force --sign - --entitlements "$ENTITLEMENTS_FILE" "$APP_BUNDLE"
+    else
+        codesign --force --sign - "$APP_BUNDLE"
+    fi
 
     echo "==> Built $APP_BUNDLE"
     codesign -v "$APP_BUNDLE"
