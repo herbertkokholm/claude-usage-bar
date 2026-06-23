@@ -14,6 +14,7 @@ class UsageHistoryService: ObservableObject {
         let dir = FileManager.default.homeDirectoryForCurrentUser
             .appendingPathComponent(".config/claude-usage-bar", isDirectory: true)
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        try? FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: dir.path)
         return dir.appendingPathComponent("history.json")
     }
 
@@ -80,6 +81,10 @@ class UsageHistoryService: ObservableObject {
         ) else { return }
         do {
             _ = try FileManager.default.replaceItemAt(url, withItemAt: tempURL)
+            // replaceItemAt preserves the destination file's metadata by default, so an
+            // existing file created by an older app version may still have world-readable
+            // permissions. Enforce 0600 explicitly on every flush.
+            try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: url.path)
         } catch {
             try? FileManager.default.removeItem(at: tempURL)
         }

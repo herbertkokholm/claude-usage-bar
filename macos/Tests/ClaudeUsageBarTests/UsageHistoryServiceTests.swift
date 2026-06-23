@@ -65,6 +65,22 @@ final class UsageHistoryServiceTests: XCTestCase {
         XCTAssertEqual(service2.history.dataPoints.count, 2)
     }
 
+    func testFlushCorrectsWeakPermissionsFromLegacyInstallation() throws {
+        let service = makeService()
+        let url = service.historyFileURL
+
+        // Simulate a file created by an older app version without explicit permissions.
+        FileManager.default.createFile(atPath: url.path, contents: nil, attributes: nil)
+        try FileManager.default.setAttributes([.posixPermissions: 0o644], ofItemAtPath: url.path)
+
+        service.recordDataPoint(pct5h: 0.5, pct7d: 0.3)
+        service.flushToDisk()
+
+        let attrs = try FileManager.default.attributesOfItem(atPath: url.path)
+        XCTAssertEqual(attrs[.posixPermissions] as? Int, 0o600,
+                       "Flush must correct world-readable permissions from legacy installations")
+    }
+
     func testPermissionsPreservedAfterMultipleFlushes() throws {
         let service = makeService()
         service.recordDataPoint(pct5h: 0.1, pct7d: 0.2)
