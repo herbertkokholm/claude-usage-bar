@@ -11,6 +11,7 @@ struct PopoverView: View {
     @AppStorage(AppearanceDefaultsKey.showServiceStatus) private var showServiceStatus = false
     @AppStorage(AppearanceDefaultsKey.showForecast) private var showForecast = true
     @State private var hostingWindow: NSWindow?
+    @State private var measuredSize: CGSize = .zero
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -45,7 +46,12 @@ struct PopoverView: View {
         })
         .onPreferenceChange(PopoverContentSizeKey.self) { size in
             guard size != .zero else { return }
+            measuredSize = size
             hostingWindow?.setContentSize(size)
+        }
+        .onChange(of: hostingWindow) { _, window in
+            guard let window, measuredSize != .zero else { return }
+            window.setContentSize(measuredSize)
         }
     }
 
