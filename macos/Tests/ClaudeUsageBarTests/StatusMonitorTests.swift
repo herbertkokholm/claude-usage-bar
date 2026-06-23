@@ -118,14 +118,13 @@ final class StatusMonitorTests: XCTestCase {
         XCTAssertFalse(monitor.isPaused)
 
         center.post(name: sleepName, object: nil)
-        // Allow the Task { @MainActor } continuation to flip the flag.
-        await Task.yield()
-        await Task.yield()
+        // Spin until the Task { @MainActor } continuation flips the flag.
+        // A fixed yield count isn't reliable under CI load, so we poll with a cap.
+        for _ in 0..<100 { if monitor.isPaused { break }; await Task.yield() }
         XCTAssertTrue(monitor.isPaused)
 
         center.post(name: wakeName, object: nil)
-        await Task.yield()
-        await Task.yield()
+        for _ in 0..<100 { if !monitor.isPaused { break }; await Task.yield() }
         XCTAssertFalse(monitor.isPaused)
 
         monitor.stop()
