@@ -10,6 +10,7 @@ class UsageService: ObservableObject {
     @Published var lastUpdated: Date?
     @Published var isAuthenticated = false
     @Published var isAwaitingCode = false
+    @Published var sessionExpired = false
     @Published private(set) var isFetching = false
     @Published private(set) var accountEmail: String?
 
@@ -161,6 +162,7 @@ class UsageService: ObservableObject {
     // MARK: - OAuth PKCE Flow
 
     func startOAuthFlow() {
+        sessionExpired = false
         let verifier = generateCodeVerifier()
         let challenge = generateCodeChallenge(from: verifier)
         let state = generateCodeVerifier() // random state
@@ -282,6 +284,7 @@ class UsageService: ObservableObject {
     func signOut() {
         deleteCredentials()
         isAuthenticated = false
+        sessionExpired = false
         usage = nil
         lastUpdated = nil
         accountEmail = nil
@@ -639,14 +642,15 @@ class UsageService: ObservableObject {
     private func expireSession() {
         deleteCredentials()
         isAuthenticated = false
+        sessionExpired = true
         usage = nil
         lastUpdated = nil
+        lastError = nil
         accountEmail = nil
         timer?.invalidate()
         timer = nil
         refreshTask?.cancel()
         refreshTask = nil
-        lastError = "Session expired — please sign in again"
     }
 }
 

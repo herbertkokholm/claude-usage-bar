@@ -53,6 +53,8 @@ struct PopoverView: View {
     private var signInView: some View {
         if service.isAwaitingCode {
             CodeEntryView(service: service)
+        } else if service.sessionExpired {
+            sessionExpiredView
         } else {
             Text("Sign in to view your usage.")
                 .font(.subheadline)
@@ -80,6 +82,33 @@ struct PopoverView: View {
             }
             .buttonStyle(.borderless)
         }
+    }
+
+    @ViewBuilder
+    private var sessionExpiredView: some View {
+        HStack(alignment: .top, spacing: 10) {
+            Image(systemName: "clock.badge.exclamationmark")
+                .foregroundStyle(.orange)
+                .font(.title3)
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Session Expired")
+                    .font(.subheadline)
+                    .fontWeight(.semibold)
+                Text("Your session has ended. Sign in again to continue.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .padding(10)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color.orange.opacity(0.1), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+
+        Button("Sign in again") {
+            service.startOAuthFlow()
+        }
+        .buttonStyle(.borderedProminent)
+        .frame(maxWidth: .infinity)
     }
 
     @ViewBuilder

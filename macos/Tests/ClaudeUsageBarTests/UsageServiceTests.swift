@@ -207,7 +207,8 @@ final class UsageServiceTests: XCTestCase {
         await service.fetchUsage()
 
         XCTAssertFalse(service.isAuthenticated)
-        XCTAssertEqual(service.lastError, "Session expired — please sign in again")
+        XCTAssertTrue(service.sessionExpired)
+        XCTAssertNil(service.lastError)
         XCTAssertNil(store.load(defaultScopes: UsageService.defaultOAuthScopes))
     }
 
@@ -442,8 +443,93 @@ final class UsageServiceTests: XCTestCase {
         await service.fetchUsage()
 
         XCTAssertFalse(service.isAuthenticated)
-        XCTAssertEqual(service.lastError, "Session expired — please sign in again")
+        XCTAssertTrue(service.sessionExpired)
+        XCTAssertNil(service.lastError)
         XCTAssertNil(store.load(defaultScopes: UsageService.defaultOAuthScopes))
+    }
+
+    func testSessionExpiredClearedByStartOAuthFlow() async throws {
+        let store = try makeStore()
+        try store.save(
+            StoredCredentials(
+                accessToken: "old-access",
+                refreshToken: "refresh-old",
+                expiresAt: Date().addingTimeInterval(3600),
+                scopes: UsageService.defaultOAuthScopes
+            )
+        )
+
+        let usageURL = URL(string: "https://example.com/api/oauth/usage")!
+        let tokenURL = URL(string: "https://example.com/v1/oauth/token")!
+
+        MockURLProtocol.handler = { request in
+            switch (request.httpMethod, request.url?.path) {
+            case ("GET", "/api/oauth/usage"):
+                return try Self.httpResponse(url: usageURL, statusCode: 401)
+            case ("POST", "/v1/oauth/token"):
+                return try Self.httpResponse(url: tokenURL, statusCode: 400, body: #"{"error":"invalid_grant"}"#)
+            default:
+                XCTFail("Unexpected request: \(request)")
+                return try Self.httpResponse(url: request.url!, statusCode: 500)
+            }
+        }
+
+        let service = UsageService(
+            session: makeSession(),
+            usageEndpoint: usageURL,
+            userinfoEndpoint: URL(string: "https://example.com/api/oauth/userinfo")!,
+            tokenEndpoint: tokenURL,
+            credentialsStore: store,
+            urlOpener: { _ in true }
+        )
+
+        await service.fetchUsage()
+        XCTAssertTrue(service.sessionExpired)
+
+        service.startOAuthFlow()
+        XCTAssertFalse(service.sessionExpired)
+        XCTAssertTrue(service.isAwaitingCode)
+    }
+
+    func testSessionExpiredClearedBySignOut() async throws {
+        let store = try makeStore()
+        try store.save(
+            StoredCredentials(
+                accessToken: "old-access",
+                refreshToken: "refresh-old",
+                expiresAt: Date().addingTimeInterval(3600),
+                scopes: UsageService.defaultOAuthScopes
+            )
+        )
+
+        let usageURL = URL(string: "https://example.com/api/oauth/usage")!
+        let tokenURL = URL(string: "https://example.com/v1/oauth/token")!
+
+        MockURLProtocol.handler = { request in
+            switch (request.httpMethod, request.url?.path) {
+            case ("GET", "/api/oauth/usage"):
+                return try Self.httpResponse(url: usageURL, statusCode: 401)
+            case ("POST", "/v1/oauth/token"):
+                return try Self.httpResponse(url: tokenURL, statusCode: 400, body: #"{"error":"invalid_grant"}"#)
+            default:
+                XCTFail("Unexpected request: \(request)")
+                return try Self.httpResponse(url: request.url!, statusCode: 500)
+            }
+        }
+
+        let service = UsageService(
+            session: makeSession(),
+            usageEndpoint: usageURL,
+            userinfoEndpoint: URL(string: "https://example.com/api/oauth/userinfo")!,
+            tokenEndpoint: tokenURL,
+            credentialsStore: store
+        )
+
+        await service.fetchUsage()
+        XCTAssertTrue(service.sessionExpired)
+
+        service.signOut()
+        XCTAssertFalse(service.sessionExpired)
     }
 
     // MARK: - End-to-end refresh recovery simulation
