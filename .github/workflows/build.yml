@@ -26,8 +26,15 @@ jobs:
           restore-keys: |
             spm-${{ runner.os }}-
 
-      - name: Run tests
-        run: cd macos && swift test
+      - name: Run tests with coverage
+        run: cd macos && swift test --enable-code-coverage
+
+      - name: Coverage report
+        run: |
+          xcrun llvm-cov report \
+            macos/.build/debug/ClaudeUsageBarPackageTests.xctest/Contents/MacOS/ClaudeUsageBarPackageTests \
+            -instr-profile macos/.build/debug/codecov/default.profdata \
+            --ignore-filename-regex='\.build|Tests'
 
       - name: Build app bundle
         run: make app
