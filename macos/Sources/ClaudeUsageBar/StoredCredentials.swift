@@ -1,5 +1,8 @@
 import Foundation
 import Security
+import os.log
+
+private let securityLog = OSLog(subsystem: "com.local.ClaudeUsageBar", category: "security")
 
 struct StoredCredentials: Codable, Equatable {
     let accessToken: String
@@ -71,7 +74,7 @@ struct StoredCredentialsStore {
             return credentials
         }
 
-        // 2. Try file-based credentials (migration path)
+        // 2. One-time migration: file → Keychain.
         // Note: concurrent callers may both attempt migration; the second Keychain
         // write is an idempotent update and the second file removal is a no-op.
         if let data = try? Data(contentsOf: credentialsFileURL),
@@ -80,8 +83,15 @@ struct StoredCredentialsStore {
                 do {
                     try saveToKeychain(data)
                     try? fileManager.removeItem(at: credentialsFileURL)
+                    return credentials
                 } catch {
-                    // Keychain failed — keep the file as fallback
+                    // Keychain unavailable — delete the insecure file and force
+                    // re-authentication rather than continuing with disk storage.
+                    os_log(.error, log: securityLog,
+                           "Keychain unavailable during credential migration; deleting insecure file: %{public}@",
+                           error.localizedDescription)
+                    try? fileManager.removeItem(at: credentialsFileURL)
+                    return nil
                 }
             }
             return credentials
@@ -102,13 +112,23 @@ struct StoredCredentialsStore {
             scopes: defaultScopes
         )
 
-        if useKeychain, let encoded = try? Self.encoder.encode(credentials) {
-            do {
-                try saveToKeychain(encoded)
-                try? fileManager.removeItem(at: legacyTokenFileURL)
-            } catch {
-                // Keychain failed — keep the legacy file as fallback
+        if useKeychain {
+            // Plaintext token is always less secure than the Keychain — delete it
+            // regardless of whether the Keychain save succeeds or fails.
+            defer { try? fileManager.removeItem(at: legacyTokenFileURL) }
+
+            if let encoded = try? Self.encoder.encode(credentials) {
+                do {
+                    try saveToKeychain(encoded)
+                    return credentials
+                } catch {
+                    os_log(.error, log: securityLog,
+                           "Keychain unavailable during legacy token migration; deleting plaintext file: %{public}@",
+                           error.localizedDescription)
+                }
             }
+            // Keychain save failed — return nil to force re-authentication.
+            return nil
         }
 
         return credentials

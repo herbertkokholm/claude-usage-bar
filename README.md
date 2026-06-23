@@ -77,9 +77,11 @@ Credentials are stored in the macOS Keychain; usage history is stored on disk:
 | Location | Purpose |
 |----------|---------|
 | macOS Keychain (`claude-usage-bar` / `credentials`) | OAuth credentials — access token, refresh token, expiry |
-| `~/.config/claude-usage-bar/history.json` | Usage history for the chart (30-day retention) |
+| `~/Library/Application Support/claude-usage-bar/history.json` | Usage history for the chart (30-day retention) |
 
 History is buffered in memory and flushed to disk every 5 minutes and on app quit. No data is sent anywhere other than the Anthropic API.
+
+Existing history at the legacy path (`~/.config/claude-usage-bar/history.json`) is automatically moved to the Application Support location on first launch after updating.
 
 ## Development
 

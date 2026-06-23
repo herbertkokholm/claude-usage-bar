@@ -322,6 +322,10 @@ private struct CodeEntryView: View {
     @ObservedObject var service: UsageService
     @State private var code = ""
 
+    private var isLockedOut: Bool {
+        service.codeAttempts >= UsageService.maxCodeAttempts
+    }
+
     var body: some View {
         Text("Paste the code from your browser:")
             .font(.subheadline)
@@ -332,6 +336,7 @@ private struct CodeEntryView: View {
                 .textFieldStyle(.roundedBorder)
                 .font(.system(.body, design: .monospaced))
                 .onSubmit { submit() }
+                .disabled(isLockedOut)
             Button {
                 if let str = NSPasteboard.general.string(forType: .string) {
                     code = str.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -340,6 +345,13 @@ private struct CodeEntryView: View {
                 Image(systemName: "doc.on.clipboard")
             }
             .buttonStyle(.borderless)
+            .disabled(isLockedOut)
+        }
+
+        if isLockedOut {
+            Label("Too many failed attempts — click Sign in again to restart", systemImage: "lock")
+                .font(.caption)
+                .foregroundStyle(.orange)
         }
 
         HStack {
@@ -350,13 +362,21 @@ private struct CodeEntryView: View {
             Spacer()
             Button("Submit") { submit() }
                 .buttonStyle(.borderedProminent)
-                .disabled(code.isEmpty)
+                .disabled(code.isEmpty || isLockedOut)
         }
     }
 
     private func submit() {
         let value = code
-        Task { await service.submitOAuthCode(value) }
+        Task {
+            await service.submitOAuthCode(value)
+            // Clear clipboard if it still contains the OAuth code so a one-time
+            // secret doesn't linger in the pasteboard after successful authentication.
+            if service.isAuthenticated,
+               NSPasteboard.general.string(forType: .string) == value {
+                NSPasteboard.general.clearContents()
+            }
+        }
     }
 }
 
