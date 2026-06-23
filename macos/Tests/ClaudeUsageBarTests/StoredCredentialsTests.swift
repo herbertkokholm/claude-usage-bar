@@ -207,6 +207,30 @@ final class StoredCredentialsTests: XCTestCase {
         store.delete()
     }
 
+    func testLegacyTokenFileIsDeletedEvenWhenKeychainSucceeds() throws {
+        // Regression guard: the defer-based deletion must fire on the success path too.
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+
+        let keychainService = "claude-usage-bar-test-\(UUID().uuidString)"
+        let store = StoredCredentialsStore(
+            directoryURL: directory,
+            useKeychain: true,
+            keychainService: keychainService
+        )
+
+        try "delete-me-token".write(to: store.legacyTokenFileURL, atomically: true, encoding: .utf8)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: store.legacyTokenFileURL.path))
+
+        let loaded = try XCTUnwrap(store.load(defaultScopes: UsageService.defaultOAuthScopes))
+        XCTAssertEqual(loaded.accessToken, "delete-me-token")
+        XCTAssertFalse(FileManager.default.fileExists(atPath: store.legacyTokenFileURL.path),
+                       "Plaintext token file must always be deleted after migration, success or failure")
+
+        store.delete()
+    }
+
     private func makeStore() throws -> StoredCredentialsStore {
         let directory = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
