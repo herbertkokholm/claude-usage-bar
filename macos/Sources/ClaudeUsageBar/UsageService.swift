@@ -2,6 +2,9 @@ import Foundation
 import Combine
 import CryptoKit
 import AppKit
+import os.log
+
+private let securityLog = OSLog(subsystem: "com.local.ClaudeUsageBar", category: "security")
 @MainActor
 class UsageService: ObservableObject {
     @Published var usage: UsageResponse?
@@ -204,9 +207,13 @@ class UsageService: ObservableObject {
             return
         }
 
-        // State validation is mandatory when an OAuth flow is pending
+        // State validation is mandatory when an OAuth flow is pending.
+        // Mismatches are logged as security events (visible in Console.app under
+        // the "security" category) to support incident investigation.
         if oauthState != nil {
             guard parts.count > 1 else {
+                os_log(.error, log: securityLog,
+                       "OAuth code submitted without state parameter — possible CSRF attempt")
                 lastError = "Missing OAuth state — expected code#state format"
                 isAwaitingCode = false
                 codeVerifier = nil
@@ -215,6 +222,9 @@ class UsageService: ObservableObject {
             }
             let returnedState = String(parts[1])
             guard returnedState == oauthState else {
+                os_log(.fault, log: securityLog,
+                       "OAuth state mismatch — expected %{private}@ got %{private}@; discarding flow",
+                       oauthState ?? "", returnedState)
                 lastError = "OAuth state mismatch — try again"
                 isAwaitingCode = false
                 codeVerifier = nil

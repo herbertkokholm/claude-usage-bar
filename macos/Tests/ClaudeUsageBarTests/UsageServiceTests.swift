@@ -856,6 +856,34 @@ final class UsageServiceTests: XCTestCase {
         XCTAssertEqual(service.lastError, "Missing OAuth state — expected code#state format")
     }
 
+    func testSubmitOAuthCodeRejectsStateMismatch() async throws {
+        let store = try makeStore()
+
+        MockURLProtocol.handler = { request in
+            XCTFail("No network request should be made on state mismatch")
+            return try Self.httpResponse(url: request.url!, statusCode: 500)
+        }
+
+        let service = UsageService(
+            session: makeSession(),
+            usageEndpoint: URL(string: "https://example.com/api/oauth/usage")!,
+            userinfoEndpoint: URL(string: "https://example.com/api/oauth/userinfo")!,
+            tokenEndpoint: URL(string: "https://example.com/v1/oauth/token")!,
+            credentialsStore: store,
+            urlOpener: { _ in true }
+        )
+
+        service.startOAuthFlow()
+        XCTAssertTrue(service.isAwaitingCode)
+
+        // Submit a code with a tampered state value.
+        await service.submitOAuthCode("valid-code#tampered-state-value")
+
+        XCTAssertFalse(service.isAuthenticated)
+        XCTAssertFalse(service.isAwaitingCode, "Flow must be torn down after state mismatch")
+        XCTAssertEqual(service.lastError, "OAuth state mismatch — try again")
+    }
+
     func testStartOAuthFlowFailsCleanlyWhenBrowserCannotOpen() throws {
         let store = try makeStore()
         let tokenURL = URL(string: "https://example.com/v1/oauth/token")!
