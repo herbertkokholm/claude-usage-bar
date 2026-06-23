@@ -356,7 +356,15 @@ private struct CodeEntryView: View {
 
     private func submit() {
         let value = code
-        Task { await service.submitOAuthCode(value) }
+        Task {
+            await service.submitOAuthCode(value)
+            // Clear clipboard if it still contains the OAuth code so a one-time
+            // secret doesn't linger in the pasteboard after successful authentication.
+            if service.isAuthenticated,
+               NSPasteboard.general.string(forType: .string) == value {
+                NSPasteboard.general.clearContents()
+            }
+        }
     }
 }
 
