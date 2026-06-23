@@ -856,6 +856,60 @@ final class UsageServiceTests: XCTestCase {
         XCTAssertEqual(service.lastError, "Missing OAuth state — expected code#state format")
     }
 
+    // MARK: - Code entry rate-limiting (10.9)
+
+    func testCodeAttemptsIncrementOnEmptySubmission() async throws {
+        let service = UsageService(
+            session: makeSession(),
+            usageEndpoint: URL(string: "https://example.com/api/oauth/usage")!,
+            userinfoEndpoint: URL(string: "https://example.com/api/oauth/userinfo")!,
+            tokenEndpoint: URL(string: "https://example.com/v1/oauth/token")!,
+            credentialsStore: try makeStore()
+        )
+        XCTAssertEqual(service.codeAttempts, 0)
+        await service.submitOAuthCode("   ")
+        XCTAssertEqual(service.codeAttempts, 1)
+    }
+
+    func testCodeAttemptsResetOnStartOAuthFlow() async throws {
+        let service = UsageService(
+            session: makeSession(),
+            usageEndpoint: URL(string: "https://example.com/api/oauth/usage")!,
+            userinfoEndpoint: URL(string: "https://example.com/api/oauth/userinfo")!,
+            tokenEndpoint: URL(string: "https://example.com/v1/oauth/token")!,
+            credentialsStore: try makeStore(),
+            urlOpener: { _ in true }
+        )
+        await service.submitOAuthCode("   ")
+        XCTAssertEqual(service.codeAttempts, 1)
+        service.startOAuthFlow()
+        XCTAssertEqual(service.codeAttempts, 0)
+    }
+
+    func testLocksOutAfterMaxFailedAttempts() async throws {
+        let service = UsageService(
+            session: makeSession(),
+            usageEndpoint: URL(string: "https://example.com/api/oauth/usage")!,
+            userinfoEndpoint: URL(string: "https://example.com/api/oauth/userinfo")!,
+            tokenEndpoint: URL(string: "https://example.com/v1/oauth/token")!,
+            credentialsStore: try makeStore(),
+            urlOpener: { _ in true }
+        )
+        service.startOAuthFlow()
+
+        // Exhaust attempts with empty submissions.
+        for _ in 0..<UsageService.maxCodeAttempts {
+            await service.submitOAuthCode("   ")
+        }
+
+        // Next call should trigger lockout regardless of content.
+        await service.submitOAuthCode("   ")
+
+        XCTAssertFalse(service.isAwaitingCode, "Flow must be torn down on lockout")
+        XCTAssertEqual(service.lastError, "Too many failed attempts — please sign in again")
+        XCTAssertEqual(service.codeAttempts, 0, "Counter must reset after lockout")
+    }
+
     func testSubmitOAuthCodeRejectsStateMismatch() async throws {
         let store = try makeStore()
 

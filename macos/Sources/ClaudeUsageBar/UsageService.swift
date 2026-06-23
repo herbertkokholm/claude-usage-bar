@@ -84,6 +84,10 @@ class UsageService: ObservableObject {
     private var codeVerifier: String?
     private var oauthState: String?
 
+    // Rate-limit code entry: lock out after this many consecutive failures.
+    static let maxCodeAttempts = 5
+    @Published private(set) var codeAttempts = 0
+
     var pct5h: Double { (usage?.fiveHour?.utilization ?? 0) / 100.0 }
     var pct7d: Double { (usage?.sevenDay?.utilization ?? 0) / 100.0 }
     var pctExtra: Double { (usage?.extraUsage?.utilization ?? 0) / 100.0 }
@@ -166,6 +170,7 @@ class UsageService: ObservableObject {
 
     func startOAuthFlow() {
         sessionExpired = false
+        codeAttempts = 0
         let verifier = generateCodeVerifier()
         let challenge = generateCodeChallenge(from: verifier)
         let state = generateCodeVerifier() // random state
@@ -198,11 +203,24 @@ class UsageService: ObservableObject {
     }
 
     func submitOAuthCode(_ rawCode: String) async {
+        // Enforce a hard limit on consecutive failed attempts to prevent brute-force
+        // of short-lived OAuth codes. The user must restart the sign-in flow after
+        // maxCodeAttempts failures.
+        guard codeAttempts < Self.maxCodeAttempts else {
+            lastError = "Too many failed attempts — please sign in again"
+            isAwaitingCode = false
+            codeVerifier = nil
+            oauthState = nil
+            codeAttempts = 0
+            return
+        }
+
         // Response format: "code#state" — parse it
         let parts = rawCode.trimmingCharacters(in: .whitespacesAndNewlines).split(separator: "#", maxSplits: 1)
         // A whitespace-only paste trims to "" and yields no parts, so guard before
         // indexing. Leave isAwaitingCode set so the user can retry without restarting.
         guard let code = parts.first.map(String.init), !code.isEmpty else {
+            codeAttempts += 1
             lastError = "No OAuth code entered"
             return
         }
@@ -214,6 +232,7 @@ class UsageService: ObservableObject {
             guard parts.count > 1 else {
                 os_log(.error, log: securityLog,
                        "OAuth code submitted without state parameter — possible CSRF attempt")
+                codeAttempts += 1
                 lastError = "Missing OAuth state — expected code#state format"
                 isAwaitingCode = false
                 codeVerifier = nil
@@ -225,6 +244,7 @@ class UsageService: ObservableObject {
                 os_log(.fault, log: securityLog,
                        "OAuth state mismatch — expected %{private}@ got %{private}@; discarding flow",
                        oauthState ?? "", returnedState)
+                codeAttempts += 1
                 lastError = "OAuth state mismatch — try again"
                 isAwaitingCode = false
                 codeVerifier = nil
@@ -261,6 +281,7 @@ class UsageService: ObservableObject {
                 return
             }
             guard http.statusCode == 200 else {
+                codeAttempts += 1
                 let bodyStr = String(data: data, encoding: .utf8) ?? ""
                 lastError = "Token exchange failed: HTTP \(http.statusCode) \(bodyStr)"
                 return
@@ -268,6 +289,7 @@ class UsageService: ObservableObject {
 
             guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
                   let credentials = credentials(from: json) else {
+                codeAttempts += 1
                 lastError = "Could not parse token response"
                 return
             }
@@ -278,6 +300,7 @@ class UsageService: ObservableObject {
                 lastError = "Failed to save credentials: \(error.localizedDescription)"
                 return
             }
+            codeAttempts = 0
             isAuthenticated = true
             isAwaitingCode = false
             lastError = nil
