@@ -11,6 +11,10 @@ struct ClaudeUsageBarApp: App {
     @State private var statusMonitor: StatusMonitor = {
         StatusMonitor(client: StatusPageClient())
     }()
+    // Toggled off/on around wake to force AppKit to re-request the status item's
+    // Control Center-hosted scene — on some macOS versions that scene fails to
+    // reconnect after sleep, leaving the process running with no visible icon.
+    @State private var isMenuBarItemInserted = true
 
     @AppStorage(AppearanceDefaultsKey.showResetDivider) private var showResetDivider = false
     @AppStorage(AppearanceDefaultsKey.coloredResetDivider) private var coloredResetDivider = true
@@ -19,7 +23,7 @@ struct ClaudeUsageBarApp: App {
     @AppStorage(AppearanceDefaultsKey.statusPollMinutes) private var statusPollMinutes = StatusPollOptions.default
 
     var body: some Scene {
-        MenuBarExtra {
+        MenuBarExtra(isInserted: $isMenuBarItemInserted) {
             PopoverView(
                 service: service,
                 historyService: historyService,
@@ -30,6 +34,15 @@ struct ClaudeUsageBarApp: App {
         } label: {
             Image(nsImage: iconImage())
                 .task {
+                    // LSUIElement apps with no regular windows are eligible for macOS's
+                    // Automatic/Sudden Termination — the system can silently kill an idle
+                    // background app to reclaim resources. This is a menu bar service that
+                    // must stay resident, so opt out for the whole process lifetime.
+                    ProcessInfo.processInfo.disableAutomaticTermination(
+                        "Menu bar polling service must stay resident"
+                    )
+                    ProcessInfo.processInfo.disableSuddenTermination()
+
                     // Auto-mark existing users as setup-complete
                     if service.isAuthenticated && !UserDefaults.standard.bool(forKey: "setupComplete") {
                         UserDefaults.standard.set(true, forKey: "setupComplete")
@@ -67,6 +80,15 @@ struct ClaudeUsageBarApp: App {
                 }
                 .onChange(of: statusPollMinutes) { _, minutes in
                     statusMonitor.updateInterval(minutes)
+                }
+                .task {
+                    for await _ in NSWorkspace.shared.notificationCenter.notifications(
+                        named: NSWorkspace.didWakeNotification
+                    ) {
+                        isMenuBarItemInserted = false
+                        try? await Task.sleep(nanoseconds: 300_000_000)
+                        isMenuBarItemInserted = true
+                    }
                 }
         }
         .menuBarExtraStyle(.window)
