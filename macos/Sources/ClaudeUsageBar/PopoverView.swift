@@ -427,7 +427,13 @@ private struct UsageBucketRow: View {
               let ws = windowSeconds,
               let pos = bucket?.resetPosition(windowSeconds: ws, now: Date()),
               let usagePct = bucket?.utilization else { return nil }
-        let state = resetIndicatorState(usagePct: usagePct, timeLeftFraction: 1.0 - pos)
+        // forecastPct is already gated on the "Show forecast" setting by the caller
+        // and stored as a 0...1 fraction; resetIndicatorState wants 0...100.
+        let state = resetIndicatorState(
+            usagePct: usagePct,
+            timeLeftFraction: 1.0 - pos,
+            projectedPct: forecastPct.map { $0 * 100 }
+        )
         return (position: pos, state: state, colored: coloredResetDivider)
     }
 

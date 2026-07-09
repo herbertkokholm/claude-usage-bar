@@ -142,6 +142,52 @@ final class UsageBucketResetIndicatorTests: XCTestCase {
         )
     }
 
+    // MARK: - resetIndicatorState with projectedPct
+
+    func testProjectedPctOverridesCurrentUsageForHighUsageCheck() {
+        // Current usage is low (40%, would read .normal alone), but the
+        // projection already crosses the projection threshold (70%) — the
+        // indicator should escalate based on where usage is headed.
+        XCTAssertEqual(
+            resetIndicatorState(usagePct: 40.0, timeLeftFraction: 0.80, projectedPct: 75.0),
+            .critical
+        )
+    }
+
+    func testProjectedPctBelowThresholdStaysNormalDespiteHighCurrentUsage() {
+        // Current usage alone (85%) would read .critical, but a low projection
+        // (e.g. usage is about to reset, or the burst already tailed off) means
+        // the trajectory isn't actually alarming.
+        XCTAssertEqual(
+            resetIndicatorState(usagePct: 85.0, timeLeftFraction: 0.80, projectedPct: 50.0),
+            .normal
+        )
+    }
+
+    func testProjectedPctBoundarySeventyCountsAsHigh() {
+        XCTAssertEqual(
+            resetIndicatorState(usagePct: 10.0, timeLeftFraction: 0.80, projectedPct: 70.0),
+            .critical
+        )
+    }
+
+    func testProjectedPctCombinesWithLateInWindowForInUsageLimit() {
+        XCTAssertEqual(
+            resetIndicatorState(usagePct: 10.0, timeLeftFraction: 0.20, projectedPct: 70.0),
+            .inUsageLimit
+        )
+    }
+
+    func testNilProjectedPctFallsBackToCurrentUsageThresholdUnchanged() {
+        // usagePct: 75 is below the current-usage threshold (80) but above the
+        // projection threshold (70) — confirms the two thresholds are distinct
+        // and the fallback path genuinely uses the current-usage one.
+        XCTAssertEqual(
+            resetIndicatorState(usagePct: 75.0, timeLeftFraction: 0.80, projectedPct: nil),
+            .normal
+        )
+    }
+
     // MARK: - Helpers
 
     private func iso(_ date: Date) -> String {
