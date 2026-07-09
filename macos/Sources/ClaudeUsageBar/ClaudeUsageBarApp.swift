@@ -18,6 +18,7 @@ struct ClaudeUsageBarApp: App {
 
     @AppStorage(AppearanceDefaultsKey.showResetDivider) private var showResetDivider = false
     @AppStorage(AppearanceDefaultsKey.coloredResetDivider) private var coloredResetDivider = true
+    @AppStorage(AppearanceDefaultsKey.showForecast) private var showForecast = true
     @AppStorage(AppearanceDefaultsKey.showServiceStatus) private var showServiceStatus = false
     @AppStorage(AppearanceDefaultsKey.showOverlayWhenOperational) private var showOverlayWhenOperational = false
     @AppStorage(AppearanceDefaultsKey.statusPollMinutes) private var statusPollMinutes = StatusPollOptions.default
@@ -113,11 +114,13 @@ struct ClaudeUsageBarApp: App {
         let usagePct7 = service.pct7d * 100
         let state5 = resetIndicatorState(
             usagePct: usagePct5,
-            timeLeftFraction: 1.0 - (pos5 ?? .zero)
+            timeLeftFraction: 1.0 - (pos5 ?? .zero),
+            projectedPct: showForecast ? service.forecast?.projected5h : nil
         )
         let state7 = resetIndicatorState(
             usagePct: usagePct7,
-            timeLeftFraction: 1.0 - (pos7 ?? .zero)
+            timeLeftFraction: 1.0 - (pos7 ?? .zero),
+            projectedPct: showForecast ? service.forecast?.projected7d : nil
         )
         return renderIcon(MenuBarIconParams(
             pct5h: service.pct5h,
