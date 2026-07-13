@@ -8,6 +8,7 @@ struct SettingsWindowContent: View {
     @AppStorage(AppearanceDefaultsKey.showResetDivider) private var showResetDivider = false
     @AppStorage(AppearanceDefaultsKey.coloredResetDivider) private var coloredResetDivider = true
     @AppStorage(AppearanceDefaultsKey.showForecast) private var showForecast = true
+    @AppStorage(AppearanceDefaultsKey.showRunOutProjection) private var showRunOutProjection = false
     @AppStorage(AppearanceDefaultsKey.showServiceStatus) private var showServiceStatus = false
     @AppStorage(AppearanceDefaultsKey.showOverlayWhenOperational) private var showOverlayWhenOperational = false
     @AppStorage(AppearanceDefaultsKey.statusPollMinutes) private var statusPollMinutes = StatusPollOptions.default
@@ -48,6 +49,7 @@ struct SettingsWindowContent: View {
 
             Section("Appearance") {
                 Toggle("Show forecast marker", isOn: $showForecast)
+                Toggle("Show run-out projection", isOn: $showRunOutProjection)
                 Toggle("Show reset time divider", isOn: $showResetDivider)
                 VStack(alignment: .leading, spacing: 4) {
                     Toggle("Colored reset divider", isOn: $coloredResetDivider)

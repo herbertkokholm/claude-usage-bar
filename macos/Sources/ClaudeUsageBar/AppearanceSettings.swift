@@ -12,6 +12,9 @@ enum AppearanceDefaultsKey {
     /// Controls forecast marker visibility on the progress bar. Default: true
     static let showForecast = "showForecast"
 
+    /// Controls visibility of the "run-out projection" panel below the history chart. Default: false
+    static let showRunOutProjection = "showRunOutProjection"
+
     // MARK: - Service Status (Claude status indicator) — added in DV-1.6
 
     /// Master feature flag for the Claude service-status indicator. Default: false (off in v1).

@@ -10,6 +10,7 @@ struct PopoverView: View {
     @State private var refreshCoolingDown = false
     @AppStorage(AppearanceDefaultsKey.showServiceStatus) private var showServiceStatus = false
     @AppStorage(AppearanceDefaultsKey.showForecast) private var showForecast = true
+    @AppStorage(AppearanceDefaultsKey.showRunOutProjection) private var showRunOutProjection = false
     @State private var hostingWindow: NSWindow?
     @State private var measuredSize: CGSize = .zero
 
@@ -152,6 +153,10 @@ struct PopoverView: View {
         }
 
         UsageChartView(historyService: historyService)
+
+        if showRunOutProjection {
+            RunOutProjectionView(service: service)
+        }
 
         if let error = service.lastError {
             Label(error, systemImage: "exclamationmark.triangle")
