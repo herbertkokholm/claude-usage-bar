@@ -106,9 +106,11 @@ final class RunOutEstimateTests: XCTestCase {
     }
 
     func testCurrentPctClampedTo100() {
+        // Anchored at 90% an hour ago, rising at +1000%/h → live pct would blow past 100%
+        // without clamping.
         let e = RunOutEstimate.compute(
             forecast: makeForecast(velocity5h: 1000),
-            anchorPct: 90, anchorTime: base,
+            anchorPct: 90, anchorTime: base.addingTimeInterval(-3600),
             reset: base.addingTimeInterval(3600), now: base
         )
         XCTAssertEqual(e.currentPct, 100, accuracy: 0.01)
