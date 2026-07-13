@@ -303,10 +303,12 @@ private extension UsageForecastService {
         let acceleration = w * head.acceleration + (1 - w) * tail.acceleration
         let residualStd  = w * head.residualStd  + (1 - w) * tail.residualStd
 
-        // Blend confidences, then apply a stability bonus:
-        // the more volatile the signal, the harder it is to forecast reliably.
-        let blendedConf = w * head.confidence + (1 - w) * tail.confidence
-        let confidence  = (blendedConf * exp(-instability * 0.3)).clamped(to: 0...1)
+        // Blend confidences from both models. Velocity/acceleration-driven volatility is
+        // already penalized once per-model via `computeConfidence`'s stabilityComponent;
+        // stacking a second instability-based penalty here would double-punish exactly the
+        // fast, clean trend a run-out warning most needs to surface, without adding any
+        // protection against genuine noise (already captured per-model via R²).
+        let confidence = (w * head.confidence + (1 - w) * tail.confidence).clamped(to: 0...1)
 
         // Effective memory horizon from the blended decay constant.
         let lambdaBlended  = w * lambdaHead + (1 - w) * lambdaTail

@@ -48,11 +48,13 @@ struct PopoverView: View {
         .onPreferenceChange(PopoverContentSizeKey.self) { size in
             guard size != .zero else { return }
             measuredSize = size
-            hostingWindow?.setContentSize(size)
+            if let hostingWindow {
+                applySize(size, to: hostingWindow)
+            }
         }
         .onChange(of: hostingWindow) { _, window in
             guard let window, measuredSize != .zero else { return }
-            window.setContentSize(measuredSize)
+            applySize(measuredSize, to: window)
         }
     }
 
@@ -219,6 +221,16 @@ struct PopoverView: View {
         .padding(.vertical, 8)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+    }
+
+    /// `setContentSize` alone lets AppKit defer laying out newly-inserted subviews (e.g. a
+    /// material card that just appeared, like the run-out projection panel) to the next
+    /// runloop turn — so it briefly renders at its pre-insertion frame while sibling cards
+    /// already show the new size. Forcing a synchronous layout pass right after resizing
+    /// keeps every card's backing view in sync with the window in the same frame.
+    private func applySize(_ size: CGSize, to window: NSWindow) {
+        window.setContentSize(size)
+        window.contentView?.layoutSubtreeIfNeeded()
     }
 
     private func refresh() {
